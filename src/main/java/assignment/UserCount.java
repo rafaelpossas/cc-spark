@@ -13,6 +13,10 @@ public class UserCount implements Serializable{
     private String userId;
     private int count;
 
+
+
+    private Double avgRate;
+
     public int getCount() {
         return count;
     }
@@ -38,6 +42,13 @@ public class UserCount implements Serializable{
         if (count > mr.count)
             return -1;
         return 0;
+    }
+    public Double getAvgRate() {
+        return avgRate;
+    }
+
+    public void setAvgRate(Double avgRate) {
+        this.avgRate = avgRate;
     }
 
 }
