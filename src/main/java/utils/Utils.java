@@ -1,5 +1,11 @@
 package utils;
 
+import org.apache.spark.SparkConf;
+import org.apache.spark.api.java.JavaPairRDD;
+import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.JavaSparkContext;
+import scala.Tuple2;
+
 import java.util.*;
 
 /**
@@ -25,5 +31,26 @@ public class Utils {
         }
 
         return sortedMap;
+    }
+    public static JavaPairRDD<String,String> getRatingDataPairRDD (JavaRDD<String> ratingData){
+        JavaPairRDD<String, String> movieRatingPerUser = ratingData.mapToPair(s ->
+        {
+            String[] values = s.split(",");
+            return new Tuple2<>(values[1],values[0]+"\t"+values[2]);
+        });
+        // movieid, (userid\rating)
+        return movieRatingPerUser;
+    }
+    public static JavaSparkContext getSparkContext(String runMode) {
+
+        SparkConf conf = new SparkConf();
+
+        if(runMode.trim().toLowerCase().equals("local")){
+            conf.setMaster("local[*]");
+        }
+
+        conf.setAppName("Movies Statistics");
+        JavaSparkContext sc = new JavaSparkContext(conf);
+        return sc;
     }
 }

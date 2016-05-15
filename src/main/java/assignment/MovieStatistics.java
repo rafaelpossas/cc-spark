@@ -1,6 +1,8 @@
 package assignment;
 
+import org.apache.commons.net.io.Util;
 import org.apache.spark.SparkConf;
+import org.apache.spark.SparkContext;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
@@ -49,19 +51,11 @@ import java.util.*;
  */
 public class MovieStatistics {
 
-    public static JavaPairRDD<String,String> getRatingDataPairRDD (JavaRDD<String> ratingData){
-        JavaPairRDD<String, String> movieRatingPerUser = ratingData.mapToPair(s ->
-        {
-            String[] values = s.split(",");
-            return new Tuple2<>(values[1],values[0]+"\t"+values[2]);
-        });
-        // movieid, (userid\rating)
-        return movieRatingPerUser;
-    }
+
 
     public static JavaPairRDD<String, Tuple2<Movie,String>> getJoinResults(JavaRDD<String> ratingData,JavaRDD<String> movieData){
 
-        JavaPairRDD<String, String> movieRatingPerUser = getRatingDataPairRDD(ratingData);
+        JavaPairRDD<String, String> movieRatingPerUser = Utils.getRatingDataPairRDD(ratingData);
 
         JavaPairRDD<String,Movie> movieGenres = movieData.flatMapToPair(s -> {
             String[] values = ((String) s).split(",");
@@ -140,55 +134,8 @@ public class MovieStatistics {
 
         return result;
     }
-
-    public static void main(String[] args) {
-
-        // Loading Files ----------------------------------------------------------------------------------------------
-        String runMode;
-        String inputDataPath;
-        String outputDataPath;
-        try{
-            inputDataPath = args[0];
-            outputDataPath = args[1];
-            runMode = args[2];
-
-        }catch (Exception e){
-            System.out.println("Execution command: java MovieStatistics path/to/input-folder path/to/output-folder runMode(cluster/local)");
-            return;
-        }
-        SparkConf conf = new SparkConf();
-
-        if(runMode.trim().toLowerCase().equals("local")){
-            conf.setMaster("local[*]");
-        }
-
-        conf.setAppName("Movies Statistics");
-        JavaSparkContext sc = new JavaSparkContext(conf);
-
-        JavaRDD<String> ratingData = sc.textFile(inputDataPath+"ratings_sample.csv").filter(s-> !s.contains("userId"));
-        JavaRDD<String> movieData = sc.textFile(inputDataPath + "movies.csv").filter(s-> !s.contains("movieId"));
-        //-------------------------------------------------------------------------------------------------------------
-        JavaPairRDD<String, Tuple2<Movie,String>> joinResults = getJoinResults(ratingData,movieData);
-        //movieid, (MovieName+Genre,userid \t rating)
-        //-------------------------------------------------------------------------------------------------------------
-
-        // Top 5 By Genre ---------------------------------------------------------------------------------------------
-        JavaPairRDD genreTop5 = getTop5ByGenre(joinResults);
-        genreTop5.foreach(s -> System.out.println(s.toString()));
-
-        // Total Number of Movies User rated in the data set ----------------------------------------------------------
-        JavaPairRDD<String,Integer> moviesPerUser = getRatingDataPairRDD(ratingData)
-                .mapToPair(s -> {
-                    String userId = s._2.split("\t")[0];
-                    return new Tuple2<String,Integer>(userId,1);
-                })
-                .reduceByKey(Integer::sum);
-        moviesPerUser.foreach(s -> System.out.println(s.toString()));
-        // Average rating of u in G -----------------------------------------------------------------------------------
-        JavaPairRDD avgRateByGenre = getAvgRateByGenre(joinResults);
-        avgRateByGenre.foreach(s-> System.out.println(s.toString()));
-        // Average rating for u in the Dataset ------------------------------------------------------------------------
-        JavaPairRDD<String,Tuple2<Double,Integer>> ratingPerUser = getRatingDataPairRDD(ratingData)
+    public static JavaPairRDD getUserAvgRating(JavaRDD<String> ratingData) {
+        JavaPairRDD<String,Tuple2<Double,Integer>> ratingPerUser = Utils.getRatingDataPairRDD(ratingData)
                 .mapToPair(s -> {
                     String userId = s._2.split("\t")[0];
                     Double rating = new Double(s._2.split("\t")[1]);
@@ -201,6 +148,51 @@ public class MovieStatistics {
                     Double avg = s._2._1 / s._2._2;
                     return new Tuple2<String, Double>(userId,avg);
                 });
+        return avgRatingPerUser;
+    }
+
+
+    public static void main(String[] args) {
+
+        // Loading Files ----------------------------------------------------------------------------------------------
+
+        String inputDataPath;
+        String outputDataPath;
+        String runMode = "local";
+        try{
+            inputDataPath = args[0];
+            outputDataPath = args[1];
+            runMode = args[2];
+
+        }catch (Exception e){
+            System.out.println("Execution command: java MovieStatistics path/to/input-folder path/to/output-folder runMode(cluster/local)");
+            return;
+        }
+        JavaSparkContext sc = Utils.getSparkContext(runMode);
+        JavaRDD<String> ratingData = sc.textFile(inputDataPath+"ratings_sample.csv").filter(s-> !s.contains("userId"));
+        JavaRDD<String> movieData = sc.textFile(inputDataPath + "movies.csv").filter(s-> !s.contains("movieId"));
+        //-------------------------------------------------------------------------------------------------------------
+        JavaPairRDD<String, Tuple2<Movie,String>> joinResults = getJoinResults(ratingData,movieData);
+        //movieid, (MovieName+Genre,userid \t rating)
+        //-------------------------------------------------------------------------------------------------------------
+
+        // Top 5 By Genre ---------------------------------------------------------------------------------------------
+        JavaPairRDD genreTop5 = getTop5ByGenre(joinResults);
+        genreTop5.foreach(s -> System.out.println(s.toString()));
+
+        // Total Number of Movies User rated in the data set ----------------------------------------------------------
+        JavaPairRDD<String,Integer> moviesPerUser = Utils.getRatingDataPairRDD(ratingData)
+                .mapToPair(s -> {
+                    String userId = s._2.split("\t")[0];
+                    return new Tuple2<String,Integer>(userId,1);
+                })
+                .reduceByKey(Integer::sum);
+        moviesPerUser.foreach(s -> System.out.println(s.toString()));
+        // Average rating of u in G -----------------------------------------------------------------------------------
+        JavaPairRDD avgRateByGenre = getAvgRateByGenre(joinResults);
+        avgRateByGenre.foreach(s-> System.out.println(s.toString()));
+        // Average rating for u in the Dataset ------------------------------------------------------------------------
+        JavaPairRDD avgRatingPerUser = getUserAvgRating(ratingData);
         avgRatingPerUser.foreach((s) -> System.out.println(s.toString()));
         // (userId,avg)
     }
