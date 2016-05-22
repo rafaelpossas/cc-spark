@@ -1,8 +1,4 @@
 package assignment;
-
-import org.apache.commons.net.io.Util;
-import org.apache.spark.SparkConf;
-import org.apache.spark.SparkContext;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
@@ -87,18 +83,18 @@ public class MovieStatistics {
 
         JavaPairRDD<String, String> genreUser = joinResults.values().mapToPair(v -> new Tuple2<>(v._1.getGenre(),v._2.split("\t")[0]));
         //genre [userId]+
-        JavaPairRDD genreTop5 = genreUser.aggregateByKey(new HashMap<String,Integer>(), 1,
+        JavaPairRDD genreTop5 = genreUser.aggregateByKey(new HashMap<String,Double>(),
                 (r,v)-> {
-                    r.merge(v,1,Integer::sum);
+                    r.merge(v,1.0,Double::sum);
                     return r;
                 },
                 (v1,v2) -> {
-                    HashMap<String,Integer> all = new HashMap<>();
-                    v1.forEach((k,v) -> all.merge(k,v,Integer::sum));
-                    v2.forEach((k,v) -> all.merge(k,v,Integer::sum));
-                    HashMap<String,Integer> ordered = (HashMap<String,Integer>) Utils.sortByValues(all);
+                    HashMap<String,Double> all = new HashMap<>();
+                    v1.forEach((k,v) -> all.merge(k,v,Double::sum));
+                    v2.forEach((k,v) -> all.merge(k,v,Double::sum));
+                    HashMap<String,Double> ordered = (HashMap<String,Double>) Utils.sortByValues(all);
                     int count = 0;
-                    Map<String,Integer> top5 = new HashMap<>();
+                    Map<String,Double> top5 = new HashMap<>();
                     for(String key: ordered.keySet()){
                         if(count >= 5) {
                             break;
@@ -106,33 +102,34 @@ public class MovieStatistics {
                         top5.put(key,ordered.get(key));
                         count++;
                     }
-                    return (HashMap<String,Integer>) Utils.sortByValues(top5);
+                    return (HashMap<String,Double>) Utils.sortByValues(top5);
                 });
-
+        // genre, [(userId=totalRatings)+]
         return  genreTop5;
     }
-    public static JavaPairRDD getAvgRateByGenre(JavaPairRDD<String, Tuple2<Movie,String>> joinResults){
+    public static JavaPairRDD getTop5AvgRateByGenre(JavaPairRDD<String, Tuple2<Movie,String>> joinResults,JavaPairRDD<String, Map<String,Double>> genreTop5){
 
-        JavaPairRDD<String, Double> genreUser = joinResults.values().mapToPair(v -> {
-            return new Tuple2<>(v._1.getGenre()+";"+v._2.split("\t")[0],new Double(v._2.split("\t")[1]));
-        });
-        //genre;userid,rating
-        JavaPairRDD ratingGenreUser = genreUser.combineByKey((s) ->{
-            return new Tuple2<Double,Integer>(s,1);
-        }, (s1,s2)-> {
-            return new Tuple2<Double,Integer>(s1._1+s2,s1._2+1);
-        }, (s1,s2) -> {
-            return new Tuple2<Double,Integer>(s1._1+s2._1,s1._2+s2._2);
-        });
-        JavaPairRDD genreUserAvg = ratingGenreUser.mapToPair((s) ->{
-            String key  = ((Tuple2<String,Tuple2<Double,Integer>>) s)._1.split(";")[0];
-            String userId = ((Tuple2<String,Tuple2<Double,Integer>>) s)._1.split(";")[1];
-            Double avg = ((Tuple2<String,Tuple2<Double,Integer>>) s)._2._1/((Tuple2<String,Tuple2<Double,Integer>>) s)._2._2;
-            return new Tuple2<String,String> (key,userId+":"+avg);
-        });
-        JavaPairRDD result = genreUserAvg.groupByKey();
+        JavaPairRDD<String,Double> genreTop5FlatMap = genreTop5.flatMapToPair(s -> {
+            Tuple2<String,Map<String,Double>> tuple = (Tuple2<String,Map<String,Double>>)s;
+            ArrayList<Tuple2<String,Double>> results = new ArrayList<>();
+            for(String key: tuple._2.keySet()){
+                results.add(new Tuple2<>(s._1+";"+key,1.0));
+            }
 
-        return result;
+            return results;
+        });
+        JavaPairRDD<String, Double> genreUser = joinResults.values().mapToPair(v -> new Tuple2<>(v._1.getGenre()+";"+v._2.split("\t")[0],new Double(v._2.split("\t")[1])));
+        JavaPairRDD<String,Tuple2<Double,Double>> joinedGenresFlat = genreTop5FlatMap.join(genreUser);
+        JavaPairRDD<String,Tuple2<Double,Double>> joinedGenres = joinedGenresFlat.reduceByKey((s1,s2) -> new Tuple2<>(s1._1+s2._1,s1._2+s2._2));
+        JavaPairRDD<String,String> avgByGenreFlat = joinedGenres.mapToPair((s) -> {
+           String[] values = s._1.split(";");
+            String genre = values[0];
+            String userId = values[1];
+            Double avg = (s._2._2 / s._2._1);
+            return new Tuple2<>(genre,userId+":"+avg);
+        });
+
+        return avgByGenreFlat.groupByKey();
     }
     public static JavaPairRDD getUserAvgRating(JavaRDD<String> ratingData) {
         JavaPairRDD<String,Tuple2<Double,Integer>> ratingPerUser = Utils.getRatingDataPairRDD(ratingData)
@@ -169,7 +166,7 @@ public class MovieStatistics {
             return;
         }
         JavaSparkContext sc = Utils.getSparkContext(runMode);
-        JavaRDD<String> ratingData = sc.textFile(inputDataPath+"ratings_sample.csv").filter(s-> !s.contains("userId"));
+        JavaRDD<String> ratingData = sc.textFile(inputDataPath+"ratings.csv").filter(s-> !s.contains("userId"));
         JavaRDD<String> movieData = sc.textFile(inputDataPath + "movies.csv").filter(s-> !s.contains("movieId"));
         //-------------------------------------------------------------------------------------------------------------
         JavaPairRDD<String, Tuple2<Movie,String>> joinResults = getJoinResults(ratingData,movieData);
@@ -177,23 +174,39 @@ public class MovieStatistics {
         //-------------------------------------------------------------------------------------------------------------
 
         // Top 5 By Genre ---------------------------------------------------------------------------------------------
-        JavaPairRDD genreTop5 = getTop5ByGenre(joinResults);
-        genreTop5.foreach(s -> System.out.println(s.toString()));
+        JavaPairRDD<String, Map<String,Double>> genreTop5 = getTop5ByGenre(joinResults);
+        genreTop5.repartition(1).saveAsTextFile(outputDataPath + "top5.by.genre");
 
-        // Total Number of Movies User rated in the data set ----------------------------------------------------------
-        JavaPairRDD<String,Integer> moviesPerUser = Utils.getRatingDataPairRDD(ratingData)
+        // Total Number of Movies User in G rated in the data set ----------------------------------------------------------
+        Map<String,Integer> moviesPerUser = Utils.getRatingDataPairRDD(ratingData)
                 .mapToPair(s -> {
                     String userId = s._2.split("\t")[0];
                     return new Tuple2<String,Integer>(userId,1);
-                })
-                .reduceByKey(Integer::sum);
-        moviesPerUser.foreach(s -> System.out.println(s.toString()));
+                })//userId,1
+                .reduceByKey(Integer::sum)
+                .collectAsMap();
+        // userId, numberOfMovies
+        JavaPairRDD<String, Map<String,Double>> top5MoviesPerUser = genreTop5.mapToPair((s) ->{
+            Map<String,Double> users = s._2;
+            for(String key: users.keySet()){
+                users.put(key,new Double(moviesPerUser.get(key)));
+            }
+            return new Tuple2<>(s._1,users);
+        });
+        top5MoviesPerUser.repartition(1).saveAsTextFile(outputDataPath + "total.movies.by.user");
         // Average rating of u in G -----------------------------------------------------------------------------------
-        JavaPairRDD avgRateByGenre = getAvgRateByGenre(joinResults);
-        avgRateByGenre.foreach(s-> System.out.println(s.toString()));
+        JavaPairRDD allUsersAvgRateByGenre = getTop5AvgRateByGenre(joinResults,genreTop5);
+        allUsersAvgRateByGenre.repartition(1).saveAsTextFile(outputDataPath + "average.by.genre");
         // Average rating for u in the Dataset ------------------------------------------------------------------------
-        JavaPairRDD avgRatingPerUser = getUserAvgRating(ratingData);
-        avgRatingPerUser.foreach((s) -> System.out.println(s.toString()));
+        Map<String,Double> avgRatingPerUser = getUserAvgRating(ratingData).collectAsMap();
+        JavaPairRDD avgRateDatasetByTop5 = genreTop5.mapToPair((s) -> {
+            Map<String,Double> users = s._2;
+            for(String key: users.keySet()){
+                users.put(key,avgRatingPerUser.get(key));
+            }
+            return new Tuple2<>(s._1,users);
+        });
+        avgRateDatasetByTop5.repartition(1).saveAsTextFile(outputDataPath + "average.by.dataset");
         // (userId,avg)
     }
 }

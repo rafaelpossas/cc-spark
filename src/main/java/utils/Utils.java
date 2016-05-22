@@ -41,6 +41,17 @@ public class Utils {
         // movieid, (userid\rating)
         return movieRatingPerUser;
     }
+    public static JavaPairRDD<String,Map<String,Double>> getRatingMapDataPairRDD (JavaRDD<String> ratingData){
+        JavaPairRDD<String, Map<String,Double>> movieRatingPerUser = ratingData.mapToPair(s ->
+        {
+            String[] values = s.split(",");
+            Map<String,Double> userRatingMap = new HashMap<>();
+            userRatingMap.put(values[0],new Double(values[2]));
+            return new Tuple2<>(values[1],userRatingMap);
+        });
+        // movieid, (userid\rating)
+        return movieRatingPerUser;
+    }
     public static JavaSparkContext getSparkContext(String runMode) {
 
         SparkConf conf = new SparkConf();

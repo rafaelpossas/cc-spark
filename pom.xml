@@ -6,7 +6,7 @@
 
     <groupId>cc-spark</groupId>
     <artifactId>cc-spark</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0</version>
 
     <!-- library dependencies -->
     <dependencies>
