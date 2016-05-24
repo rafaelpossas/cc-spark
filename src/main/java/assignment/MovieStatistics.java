@@ -117,17 +117,19 @@ public class MovieStatistics {
             }
 
             return results;
+            //genre;userId,1
         });
         JavaPairRDD<String, Double> genreUser = joinResults.values().mapToPair(v -> new Tuple2<>(v._1.getGenre()+";"+v._2.split("\t")[0],new Double(v._2.split("\t")[1])));
-        JavaPairRDD<String,Tuple2<Double,Double>> joinedGenresFlat = genreTop5FlatMap.join(genreUser);
-        JavaPairRDD<String,Tuple2<Double,Double>> joinedGenres = joinedGenresFlat.reduceByKey((s1,s2) -> new Tuple2<>(s1._1+s2._1,s1._2+s2._2));
+        //genre;userId, rating
+        JavaPairRDD<String,Tuple2<Double,Double>> joinedGenresFlat = genreTop5FlatMap.join(genreUser);//genre;userId, (rating,total)
+        JavaPairRDD<String,Tuple2<Double,Double>> joinedGenres = joinedGenresFlat.reduceByKey((s1,s2) -> new Tuple2<>(s1._1+s2._1,s1._2+s2._2)); //genre;userId,avg
         JavaPairRDD<String,String> avgByGenreFlat = joinedGenres.mapToPair((s) -> {
            String[] values = s._1.split(";");
             String genre = values[0];
             String userId = values[1];
             Double avg = (s._2._2 / s._2._1);
             return new Tuple2<>(genre,userId+":"+avg);
-        });
+        }); // genre, userId:avg
 
         return avgByGenreFlat.groupByKey();
     }
@@ -166,8 +168,8 @@ public class MovieStatistics {
             return;
         }
         JavaSparkContext sc = Utils.getSparkContext(runMode);
-        JavaRDD<String> ratingData = sc.textFile(inputDataPath+"ratings.csv").filter(s-> !s.contains("userId"));
-        JavaRDD<String> movieData = sc.textFile(inputDataPath + "movies.csv").filter(s-> !s.contains("movieId"));
+        JavaRDD<String> ratingData = sc.textFile(inputDataPath+"ratings_sample.csv").filter(s-> !s.contains("userId"));
+        JavaRDD<String> movieData = sc.textFile(inputDataPath +"movies.csv").filter(s-> !s.contains("movieId"));
         //-------------------------------------------------------------------------------------------------------------
         JavaPairRDD<String, Tuple2<Movie,String>> joinResults = getJoinResults(ratingData,movieData);
         //movieid, (MovieName+Genre,userid \t rating)

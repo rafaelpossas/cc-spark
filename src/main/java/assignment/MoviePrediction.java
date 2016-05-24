@@ -67,8 +67,8 @@ public class MoviePrediction {
         }
 
         JavaSparkContext sc = Utils.getSparkContext(runMode);
-        JavaRDD<String> ratingData = sc.textFile(inputDataPath+"ratings.csv").filter(s-> !s.contains("userId"));
-        JavaRDD<String> moviesData = sc.textFile(inputDataPath + "movies.csv").filter(s-> !s.contains("movieId"));
+        JavaRDD<String> ratingData = sc.textFile(inputDataPath+"ratings_small.csv").filter(s-> !s.contains("userId"));
+        JavaRDD<String> moviesData = sc.textFile(inputDataPath + "movies_small.csv").filter(s-> !s.contains("movieId"));
         JavaRDD<String> myMovies = sc.textFile(myMoviesPath+"my_movies.csv").filter(s-> !s.contains("movieId"));
 
         JavaPairRDD<String,Double> myMoviesRDD = myMovies.mapToPair((s) -> new Tuple2<>(s.split(",")[0],new Double(s.split(",")[1])));
@@ -117,6 +117,9 @@ public class MoviePrediction {
                return false;
            }
         });
+
+        joinedRatings.repartition(10);
+
         JavaPairRDD<Tuple2<String,String>,Tuple2<String,String>> moviePairs = joinedRatings.mapToPair(s -> {
             String myMovie = myMoviesMap.get(s._2._1._1) != null ? s._2._1._1:s._2._2._1;
             String predicted = myMoviesMap.get(s._2._1._1) == null ? s._2._1._1:s._2._2._1;
@@ -146,6 +149,7 @@ public class MoviePrediction {
             Double cosinSimilarity = numerator / ((Math.sqrt(denominatorMovie1))*Math.sqrt(denominatorMovie2));
             return new Tuple2<>(key,s._1._1+":"+cosinSimilarity);
         }); // movied, [myMovie:similarity]+
+
 
         cosineSimilarity = cosineSimilarity.groupByKey().mapToPair(s -> {
             final Map<String,Double> movieSimilarity = new HashMap<>();
