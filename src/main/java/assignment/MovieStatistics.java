@@ -168,7 +168,7 @@ public class MovieStatistics {
             return;
         }
         JavaSparkContext sc = Utils.getSparkContext(runMode);
-        JavaRDD<String> ratingData = sc.textFile(inputDataPath+"ratings_sample.csv").filter(s-> !s.contains("userId"));
+        JavaRDD<String> ratingData = sc.textFile(inputDataPath+"ratings.csv").filter(s-> !s.contains("userId"));
         JavaRDD<String> movieData = sc.textFile(inputDataPath +"movies.csv").filter(s-> !s.contains("movieId"));
         //-------------------------------------------------------------------------------------------------------------
         JavaPairRDD<String, Tuple2<Movie,String>> joinResults = getJoinResults(ratingData,movieData);
