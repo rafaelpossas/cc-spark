@@ -60,7 +60,7 @@ public class Utils {
             conf.setMaster("local[*]");
         }
 
-        conf.setAppName("Movies Statistics");
+        conf.setAppName("Assignment 2 - rcar7834");
         JavaSparkContext sc = new JavaSparkContext(conf);
         return sc;
     }

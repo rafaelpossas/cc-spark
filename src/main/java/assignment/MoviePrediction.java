@@ -67,8 +67,8 @@ public class MoviePrediction {
         }
 
         JavaSparkContext sc = Utils.getSparkContext(runMode);
-        JavaRDD<String> ratingData = sc.textFile(inputDataPath+"ratings_small.csv").filter(s-> !s.contains("userId"));
-        JavaRDD<String> moviesData = sc.textFile(inputDataPath + "movies_small.csv").filter(s-> !s.contains("movieId"));
+        JavaRDD<String> ratingData = sc.textFile(inputDataPath+"ratings.csv").filter(s-> !s.contains("userId"));
+        JavaRDD<String> moviesData = sc.textFile(inputDataPath + "movies.csv").filter(s-> !s.contains("movieId"));
         JavaRDD<String> myMovies = sc.textFile(myMoviesPath+"my_movies.csv").filter(s-> !s.contains("movieId"));
 
         JavaPairRDD<String,Double> myMoviesRDD = myMovies.mapToPair((s) -> new Tuple2<>(s.split(",")[0],new Double(s.split(",")[1])));
@@ -191,7 +191,8 @@ public class MoviePrediction {
 
         List<Tuple2<String, Double>> top50Movies = cosineSimilarity
                 .mapToPair( s -> new Tuple2<>(((Tuple2<String,Double>)s)._2,((Tuple2<String,Double>)s)._1))
-                .sortByKey(false).take(50);
+                .sortByKey(false)
+                .take(50);
 
         sc.parallelize(top50Movies).repartition(1).saveAsTextFile(outputDataPath + "top50.predicted");
 
